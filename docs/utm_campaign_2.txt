@@ -1,0 +1,7 @@
+news
+reviews
+sales
+compilations
+recommendations
+production
+interactive

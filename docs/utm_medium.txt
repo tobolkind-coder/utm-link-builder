@@ -1,0 +1,16 @@
+cpc
+cpm
+cpa
+cpv
+cps
+goods
+link
+album
+email
+email_bulk
+email_trigger
+push
+sms
+qr
+offline
+crm
