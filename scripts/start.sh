@@ -1,3 +1,3 @@
 #!/bin/sh
 node scripts/migrate.js
-node server.js
+node scripts/trace-exec.js
