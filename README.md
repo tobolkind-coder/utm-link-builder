@@ -1,5 +1,8 @@
 # Инструкция по установке и настройке UTM Link Builder
 
+> **Версия:** `v2` (актуальная).  
+> **Ветка `main`** содержит предыдущую версию проекта.
+
 Этот сервис предназначен для генерации маркетинговых ссылок. Данное руководство описывает требования к серверу, процесс установки и безопасности.
 
 ## 1. Требования к VPS
@@ -29,8 +32,8 @@
 ### Linux (через скрипт)
 
 ```bash
-# Клонируйте репозиторий
-git clone https://github.com/tobolkind-coder/utm-link-builder3.git && cd utm-link-builder3
+# Клонируйте репозиторий (ветка v2 — актуальная версия)
+git clone -b v2 https://github.com/tobolkind-coder/utm-link-builder.git && cd utm-link-builder
 
 # Запустите скрипт установки
 sudo bash install.sh
@@ -64,13 +67,13 @@ sudo bash scripts/backup.sh
 sudo crontab -e
 
 # Добавьте строку для ежедневного запуска в 3:00 ночи:
-0 3 * * * cd /path/to/utm-link-builder3 && bash scripts/backup.sh >> backups/cron.log 2>&1
+0 3 * * * cd /path/to/utm-link-builder && bash scripts/backup.sh >> backups/cron.log 2>&1
 ```
 
 **Рекомендация:** периодически копируйте дампы за пределы сервера (на другой хост, в облачное хранилище или на отдельный диск).
 
 ## 5. Обновление
-Если вы используете git:
+Если вы используете git (в ветке `v2`):
 ```bash
 git pull
 sudo bash install.sh
