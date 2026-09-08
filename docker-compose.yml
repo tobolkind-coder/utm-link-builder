@@ -1,0 +1,99 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      POSTGRES_DB: ${POSTGRES_DB:-utm_builder}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  web:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@db:5432/${POSTGRES_DB:-utm_builder}?schema=public
+      AUTH_SECRET: ${AUTH_SECRET:-your-secret-key-here}
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
+      SHORT_DOMAIN: ${SHORT_DOMAIN:-go.company.ru}
+      NODE_ENV: production
+    expose:
+      - "3000"
+    healthcheck:
+      # 127.0.0.1, а не localhost: сервер слушает только IPv4, а localhost внутри
+      # контейнера резолвится ещё и в ::1, куда busybox wget идёт первым и получает
+      # connection refused.
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  nginx:
+    image: nginx:1.30.4-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - SHORT_DOMAIN=${SHORT_DOMAIN:-go.company.ru}
+    # Раз в 6 часов перечитываем конфигурацию, чтобы подхватить продлённый
+    # сертификат. Это заменяет deploy-hook, ради которого в certbot монтировался
+    # docker.sock. Вызов /docker-entrypoint.sh во второй раз обязателен: штатный
+    # entrypoint образа обрабатывает шаблоны из /etc/nginx/templates только когда
+    # его первый аргумент — "nginx", а здесь первым аргументом идёт /bin/sh.
+    command: /bin/sh -c 'while :; do sleep 6h & wait $${!}; nginx -s reload; done & exec /docker-entrypoint.sh nginx -g "daemon off;"'
+    volumes:
+      - ./nginx/templates:/etc/nginx/templates:ro
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
+    depends_on:
+      - web
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  certbot:
+    image: certbot/certbot:v5.7.0
+    restart: unless-stopped
+    volumes:
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
+    # Только продление в общий том. Перезагрузку nginx выполняет сам, поэтому
+    # ни docker.sock, ни docker CLI внутри контейнера больше не нужны.
+    entrypoint: >
+      /bin/sh -c 'trap exit TERM; while :; do
+        certbot renew;
+        sleep 12h & wait $${!};
+      done;'
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  postgres_data:

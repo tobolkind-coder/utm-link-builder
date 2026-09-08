@@ -1,0 +1,188 @@
+# .clinerules — UTM Link Builder
+
+Контекст проекта для Cline, чтобы не объяснять заново в новых сессиях.
+
+## Что это за проект
+
+Внутренний корпоративный веб-сервис (не публичный) для сотрудников компании:
+- генерирует маркетинговые ссылки с UTM-метками (utm_source, utm_medium, utm_campaign, utm_content)
+- автоматически создаёт короткую ссылку на собственном домене (SHORT_DOMAIN)
+- хранит историю ссылок пользователя
+- имеет админ-панель для управления пользователями, справочниками UTM и настройками сервиса
+
+Полное ТЗ и документация лежат в `docs/` (00_README.md ... 10_AI_INSTRUCTIONS.md), макет UI — `docs/ui.png`.
+Приоритет при противоречиях: `docs/ui.png` > `docs/01_PROMPT.md` > остальная документация в `docs/`.
+
+## Стек технологий
+
+- **Next.js 15.3.3** (App Router, TypeScript), React 19
+- **PostgreSQL** через **Prisma ORM 6.9** (`@prisma/client`, `@prisma/adapter-pg`, `pg`)
+- Аутентификация — самописная, cookie-based, без NextAuth/next-auth пакета несмотря на переменную `NEXTAUTH_URL` (используется просто как базовый URL). Сессия = httpOnly cookie `session` со значением `userId`. Пароли — `bcryptjs`.
+- Стилизация — Tailwind CSS 4 (`@tailwindcss/postcss`), компоненты в духе shadcn/ui (`src/components/ui/*`: button, card, dialog, dropdown-menu, input, label, select, separator, skeleton, sonner, switch, tabs, tooltip)
+- Уведомления — `sonner`
+- Иконки — `lucide-react`
+- `clsx` + `tailwind-merge` — утилиты классов
+- ESLint 9 (flat config, `eslint.config.mjs`)
+- Docker + docker-compose для деплоя (node:20-alpine, standalone build Next.js)
+
+## Архитектура и слои
+
+Классическая слоистая архитектура поверх Next.js App Router:
+
+```
+src/app/            — маршруты (страницы + API route handlers)
+src/components/     — React-компоненты (UI, формы, таблицы)
+src/lib/
+  ├─ auth.ts              — аутентификация, роли, сессии (cookie)
+  ├─ prisma.ts             — singleton PrismaClient
+  ├─ import-utm.ts         — импорт справочников UTM из docs/*.txt
+  ├─ utils.ts              — общие хелперы (вероятно cn() для tailwind-merge)
+  ├─ repositories/         — доступ к БД через Prisma (по одному файлу на сущность)
+  │    link-repository.ts, user-repository.ts, utm-repository.ts
+  └─ services/             — бизнес-логика поверх репозиториев
+       link-service.ts, user-service.ts, settings-service.ts, utm-service.ts
+```
+
+Паттерн: **route handler → service → repository → prisma**. API-роуты не обращаются к Prisma напрямую, вся бизнес-логика — в `services/*`, а вся работа с БД — в `repositories/*`.
+
+### Основные сущности (Prisma schema — `prisma/schema.prisma`)
+
+- **User** — пользователь сервиса. Поля: `login` (уникальный), `passwordHash` (bcrypt), `fullName`, `role` (enum `UserRole`: USER, EDITOR, ADMIN, SUPERADMIN), `isActive`, `isDeleted` (soft delete) + `deletedAt`. Связь 1:N с `Link`.
+- **Link** — сгенерированная UTM/короткая ссылка. Поля: `userId` (FK → User), `originalUrl`, `utmUrl` (итоговый URL с UTM-метками), `shortCode` (уникальный, 6-8 символов a-zA-Z0-9), `shortUrl`, отдельные поля `utmSource/utmMedium/utmCampaign/utmContent` для истории/поиска.
+- **Settings** — единственная запись с настройками сервиса: `serviceName`, `shortDomain`, `logo`, `favicon`, `instructionUrl`.
+- **UtmSource / UtmMedium / UtmCampaignPart1 / UtmCampaignPart2** — справочники значений UTM-параметров, редактируемые в админке (`name`, `sortOrder`, `isActive`).
+
+### Роли и права (src/lib/auth.ts)
+
+Иерархия ролей: `USER(0) < EDITOR(1) < ADMIN(2) < SUPERADMIN(3)`, проверка через `hasRole(user, minRole)`.
+
+### Редирект по короткой ссылке
+
+`src/app/[shortCode]/route.ts` — GET-обработчик: валидирует код регэкспом `^[a-zA-Z0-9]{6,8}$`, ищет `Link` по `shortCode` через `link-repository`, делает `302` редирект на `link.utmUrl`. Если код невалиден/не найден — `NextResponse.next()` (пропускает дальше, например на 404 Next.js).
+
+### Генерация ссылок (src/lib/services/link-service.ts)
+
+1. Нормализует URL (добавляет `https://` если нет протокола)
+2. Удаляет существующие utm_* параметры из URL
+3. Добавляет новые: `utm_source` (обязателен), `utm_medium`, `utm_campaign` (склейка campaignPart1_campaignPart2), `utm_content` (дата в формате YYYYMMDD + опциональный текст)
+4. Генерирует уникальный `shortCode` (6-8 случайных символов, до 10 попыток на уникальность)
+5. Берёт `shortDomain` из `Settings`, собирает `shortUrl`
+6. Сохраняет `Link` в БД через repository
+
+### API-роуты (src/app/api/)
+
+- `auth/login`, `auth/logout`, `auth/me` — аутентификация
+- `links` — создание/получение ссылок пользователя (история последних 15 — см. `getUserLinksService`)
+- `source`, `source/[id]`, `medium`, `medium/[id]`, `campaign-part1`, `campaign-part1/[id]`, `campaign-part2`, `campaign-part2/[id]` — CRUD справочников UTM (админка)
+- `settings` — настройки сервиса (shortDomain, serviceName и т.д.)
+- `users`, `users/[id]` — управление пользователями (админка)
+
+### Страницы (src/app/)
+
+- `/` (`page.tsx`) — главная страница генератора ссылок (форма + результат + история)
+- `/login` — форма входа
+- `/admin` (+ layout с проверкой роли) — дашборд админки
+- `/admin/users` — управление пользователями
+- `/admin/dictionaries` — управление справочниками UTM
+- `/admin/settings` — настройки сервиса
+- `/[shortCode]` — route handler для редиректа (не страница)
+
+### Компоненты (src/components/)
+
+- `auth/login-form.tsx`
+- `layout/header.tsx`
+- `link-generator/link-form.tsx`, `link-generator/link-result.tsx`
+- `link-history/link-table.tsx`
+- `admin/user-table.tsx`, `admin/user-dialog.tsx`
+- `ui/*` — базовые UI-примитивы (shadcn-style, на Radix скорее всего)
+
+## База данных / миграции
+
+Миграции лежат в `prisma/migrations/` и применяются **не через `prisma migrate deploy`**, а кастомным скриптом `scripts/migrate.js`:
+- читает папки миграций по порядку, построчно выполняет SQL из `migration.sql`
+- игнорирует ошибки "уже существует" (коды postgres 42710, 42P07, 42P16, 42P01, 42701) — идемпотентно
+- после миграций вызывает `seedData()`:
+  - засевает `UtmSource`/`UtmMedium`/`UtmCampaignPart1`/`UtmCampaignPart2` из текстовых файлов `docs/utm_*.txt` (если таблицы пустые)
+  - засевает `Settings` (serviceName="UTM Link Builder", shortDomain из `SHORT_DOMAIN` или дефолт)
+  - засевает `SuperAdmin` пользователя: **login `admin` / password `admin123`** (bcrypt-хэш захардкожен в скрипте), если таблица `User` пустая
+
+Список миграций:
+- `20250101000000_init` — базовая схема
+- `20250724000000_add_instruction_url` — добавление `instructionUrl` в `Settings`
+- `20250724100000_add_roles` — добавление ролей пользователей
+
+`prisma.config.ts` задаёт путь к schema/migrations и datasource URL (по умолчанию `postgresql://postgres:postgres@localhost:5432/utm_builder?schema=public`).
+
+## Переменные окружения (`.env`, см. `.env.example`)
+
+```
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=password
+POSTGRES_DB=utm_builder
+DATABASE_URL=postgresql://postgres:password@db:5432/utm_builder?schema=public
+AUTH_SECRET=your-secret-key-here
+NEXTAUTH_URL=http://localhost:3000
+SHORT_DOMAIN=go.company.ru
+POSTGRES_PORT=5432
+WEB_PORT=3000
+NODE_ENV=production
+```
+Примечание: в docker-compose для сервиса `web` хост БД — `db` (имя сервиса), при локальном запуске без Docker — `localhost`.
+
+## Как запускать проект локально
+
+### Вариант 1 — через Docker Compose (рекомендуется, как в проде)
+
+```bash
+cp .env.example .env      # при необходимости отредактировать
+docker compose up -d --build
+```
+- Поднимает `db` (postgres:16-alpine) и `web` (Next.js standalone).
+- При старте контейнера `web` выполняется `scripts/start.sh`: `node scripts/migrate.js` (миграции+сиды) → `node server.js`.
+- Приложение: http://localhost:3000 (или `WEB_PORT`)
+- Дефолтный логин: `admin` / `admin123`
+- Также есть готовые скрипты: `install.sh`/`install.bat` (полная установка), `status.sh`/`status.bat` (`docker compose ps`), `update.sh`/`update.bat`.
+
+### Вариант 2 — локальная разработка без пересборки Docker-образа на каждое изменение
+
+```bash
+npm install
+# поднять только БД:
+docker compose up -d db
+# создать .env с DATABASE_URL=postgresql://postgres:password@localhost:5432/utm_builder?schema=public
+npx prisma generate
+node scripts/migrate.js        # применить миграции + засеять справочники/админа
+npm run dev                    # Next.js dev server на localhost:3000
+```
+
+### Полезные npm-скрипты
+
+- `npm run dev` — Next.js dev server
+- `npm run build` — production build (standalone, `output: "standalone"` в next.config.ts)
+- `npm run start` — запуск собранного приложения
+- `npm run lint` — ESLint (при билде ошибки линта игнорируются — `eslint.ignoreDuringBuilds: true`)
+
+### Работа с Prisma
+
+- Схема: `prisma/schema.prisma`
+- **Миграции создаются вручную как SQL-файлы** в `prisma/migrations/<timestamp>_<name>/migration.sql` (обычный `prisma migrate dev` тоже можно использовать для генерации, но применение в проде идёт через кастомный `scripts/migrate.js`, а не `prisma migrate deploy`) — при добавлении новой миграции стоит проверить совместимость с логикой игнорирования ошибок в `migrate.js`.
+- `npx prisma generate` — генерация Prisma Client (выполняется в Dockerfile при сборке).
+- `npx prisma studio` — GUI для просмотра БД (полезно при локальной отладке).
+
+## Соглашения по коду (см. docs/08_CODE_STYLE.md для деталей)
+
+- TypeScript strict, App Router (server components по умолчанию, `'use client'` для интерактивных)
+- Слой repositories не содержит бизнес-логики — только Prisma-запросы
+- Слой services содержит валидацию и бизнес-правила, не работает с Prisma напрямую (только через repositories)
+- API route handlers — тонкие, делегируют в services
+- Пути импорта — алиас `@/*` → `src/*` (см. tsconfig.json)
+
+## Важные нюансы для будущих правок
+
+1. **Аутентификация примитивная**: cookie `session` = просто `userId` в открытом виде (не подписан/не JWT). `AUTH_SECRET` определён в env, но не используется в `src/lib/auth.ts` — возможно, задел на будущее или недоработка. Стоит учитывать при доработке безопасности.
+2. **Soft delete** пользователей через `isDeleted`/`deletedAt`, а не физическое удаление.
+3. **shortCode валидируется регэкспом `^[a-zA-Z0-9]{6,8}$`** и в генераторе, и в редиректе — при изменении длины/алфавита нужно менять оба места (`link-service.ts` и `[shortCode]/route.ts`).
+4. Сиды в `migrate.js` **не перезаписывают существующие данные** — только если таблица пуста (проверка `COUNT(*) === 0`). Т.е. чтобы пересеять — нужно чистить таблицу вручную или БД volume.
+5. Файлы `docs/utm_*.txt` — источник истины для начальных справочников (по одному значению на строку).
+6. Документация ТЗ в `docs/01_PROMPT.md`...`docs/10_AI_INSTRUCTIONS.md` может содержать более свежие/точные требования — сверяться с ней при существенных изменениях функционала.
+7. Локальный проект расположен на машине с терминалом — Windows PowerShell. Используй ; вместо && для разделения команд. Не используй bash-синтаксис.

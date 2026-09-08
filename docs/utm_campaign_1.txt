@@ -1,0 +1,11 @@
+mail
+bot
+post
+stories
+article
+clips
+reels
+video
+shorts
+poll
+description
