@@ -50,8 +50,14 @@ function buildCampaign(part1?: string, part2?: string): string | undefined {
 }
 
 function buildContent(date?: string, text?: string): string | undefined {
-  if (!date && !text) return undefined
-  const dateStr = date ? date.replace(/-/g, '') : new Date().toISOString().slice(0, 10).replace(/-/g, '')
+  const hasDate = date !== undefined && date !== ''
+  if (!hasDate && !text) return undefined
+  const dateStr = hasDate
+    ? date!.replace(/-/g, '')
+    : date === undefined
+      ? new Date().toISOString().slice(0, 10).replace(/-/g, '')
+      : ''
+  if (!dateStr) return text
   if (!text) return dateStr
   return `${dateStr}_${text}`
 }
