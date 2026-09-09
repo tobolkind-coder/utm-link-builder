@@ -1,4 +1,4 @@
-import { createLink, isShortCodeUnique, getUserLinks } from '@/lib/repositories/link-repository'
+import { createLink, isShortCodeUnique, getUserLinks, getLinkById, updateLink } from '@/lib/repositories/link-repository'
 import { getSettings } from '@/lib/services/settings-service'
 
 export interface CreateLinkRequest {
@@ -135,4 +135,86 @@ export async function createLinkService(
 
 export async function getUserLinksService(userId: string) {
   return getUserLinks(userId, 50)
+}
+
+function parseUtmParams(urlString: string): {
+  utmSource: string
+  utmMedium: string | null
+  utmCampaign: string | null
+  utmContent: string | null
+} {
+  const url = new URL(urlString)
+  const getParam = (name: string) => {
+    const val = url.searchParams.get(name)
+    return val !== null && val !== '' ? val : null
+  }
+  const source = getParam('utm_source')
+  if (!source) {
+    throw new Error('UTM Source обязателен в UTM-ссылке.')
+  }
+  return {
+    utmSource: source,
+    utmMedium: getParam('utm_medium'),
+    utmCampaign: getParam('utm_campaign'),
+    utmContent: getParam('utm_content'),
+  }
+}
+
+export async function updateLinkUtmUrlService(
+  id: string,
+  userId: string,
+  newUtmUrl: string
+) {
+  const link = await getLinkById(id)
+  if (!link) {
+    throw new Error('Ссылка не найдена.')
+  }
+  if (link.userId !== userId) {
+    throw new Error('Недостаточно прав для редактирования этой ссылки.')
+  }
+
+  const normalizedUrl = normalizeUrl(newUtmUrl)
+  let url: URL
+  try {
+    url = new URL(normalizedUrl)
+  } catch {
+    throw new Error('Некорректный URL.')
+  }
+
+  // Удаляем старые utm-параметры и получаем чистый URL
+  const cleanUrl = removeExistingUtmParams(url.toString())
+
+  // Проверяем что utm_source присутствует
+  const source = url.searchParams.get('utm_source')
+  if (!source || source === '') {
+    throw new Error('UTM Source (utm_source) обязателен в UTM-ссылке.')
+  }
+
+  // Парсим utm-параметры из нового URL
+  const utmParams = parseUtmParams(url.toString())
+
+  const utmUrl = cleanUrl.toString()
+  // Восстанавливаем utm-параметры в URL для хранения в БД
+  const finalUrl = new URL(utmUrl)
+  finalUrl.searchParams.set('utm_source', utmParams.utmSource)
+  if (utmParams.utmMedium) finalUrl.searchParams.set('utm_medium', utmParams.utmMedium)
+  if (utmParams.utmCampaign) finalUrl.searchParams.set('utm_campaign', utmParams.utmCampaign)
+  if (utmParams.utmContent) finalUrl.searchParams.set('utm_content', utmParams.utmContent)
+
+  const updated = await updateLink(id, {
+    originalUrl: utmUrl, // URL без utm-параметров
+    utmUrl: finalUrl.toString(),
+    utmSource: utmParams.utmSource,
+    utmMedium: utmParams.utmMedium,
+    utmCampaign: utmParams.utmCampaign,
+    utmContent: utmParams.utmContent,
+  })
+
+  return {
+    id: updated.id,
+    originalUrl: updated.originalUrl,
+    utmUrl: updated.utmUrl,
+    shortUrl: updated.shortUrl,
+    createdAt: updated.createdAt,
+  }
 }

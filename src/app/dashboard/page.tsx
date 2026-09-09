@@ -90,7 +90,7 @@ export default function DashboardPage() {
       <main className="container mx-auto px-4 py-8 max-w-5xl">
         <LinkForm onSuccess={handleLinkSuccess} />
         <LinkResult link={lastCreatedLink} />
-        <LinkTable links={links} />
+        <LinkTable links={links} onUpdated={fetchLinks} />
       </main>
     </div>
   )

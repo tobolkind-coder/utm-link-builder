@@ -3,6 +3,8 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { toast } from 'sonner'
 
 interface Link {
@@ -14,12 +16,17 @@ interface Link {
 
 interface LinkTableProps {
   links: Link[]
+  onUpdated: () => void
 }
 
 const ITEMS_PER_PAGE = 10
 
-export function LinkTable({ links }: LinkTableProps) {
+export function LinkTable({ links, onUpdated }: LinkTableProps) {
   const [page, setPage] = useState(1)
+  const [editingLink, setEditingLink] = useState<Link | null>(null)
+  const [utmUrl, setUtmUrl] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
   const totalPages = Math.ceil(links.length / ITEMS_PER_PAGE)
   const startIdx = (page - 1) * ITEMS_PER_PAGE
   const pageLinks = links.slice(startIdx, startIdx + ITEMS_PER_PAGE)
@@ -36,6 +43,43 @@ export function LinkTable({ links }: LinkTableProps) {
       document.body.removeChild(textArea)
     }
     toast.success('Ссылка скопирована.')
+  }
+
+  const openEdit = (link: Link) => {
+    setEditingLink(link)
+    setUtmUrl(link.utmUrl)
+    setError('')
+  }
+
+  const closeEdit = () => {
+    setEditingLink(null)
+    setUtmUrl('')
+    setError('')
+  }
+
+  const handleSave = async () => {
+    if (!editingLink) return
+    setError('')
+    setSaving(true)
+    try {
+      const res = await fetch(`/api/links/${editingLink.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ utmUrl }),
+      })
+      const data = await res.json()
+      if (!data.success) {
+        setError(data.message)
+        return
+      }
+      toast.success('Ссылка обновлена.')
+      closeEdit()
+      onUpdated()
+    } catch {
+      setError('Ошибка сохранения.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   const formatDate = (dateString: string) => {
@@ -72,7 +116,10 @@ export function LinkTable({ links }: LinkTableProps) {
                       <span className="font-mono text-xs break-all min-w-0">{link.shortUrl}</span>
                       <Button size="sm" className="shrink-0" onClick={() => handleCopy(link.shortUrl)}>Копировать</Button>
                     </div>
-                    <p className="text-xs text-gray-500 break-all">{link.utmUrl}</p>
+                    <div className="flex items-start gap-2 min-w-0">
+                      <p className="text-xs text-gray-500 break-all min-w-0">{link.utmUrl}</p>
+                      <Button size="sm" variant="outline" className="shrink-0" onClick={() => openEdit(link)}>Редактировать</Button>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -95,6 +142,34 @@ export function LinkTable({ links }: LinkTableProps) {
           </>
         )}
       </CardContent>
+
+      <Dialog open={editingLink !== null} onOpenChange={(open) => { if (!open) closeEdit() }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Редактировать ссылку</DialogTitle>
+            <DialogDescription>
+              Измените UTM-ссылку. Короткая ссылка останется прежней:{' '}
+              <span className="font-mono text-xs break-all">{editingLink?.shortUrl}</span>
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <label className="block text-sm font-medium">UTM-ссылка *</label>
+            <Input
+              type="text"
+              value={utmUrl}
+              onChange={(e) => setUtmUrl(e.target.value)}
+              placeholder="https://site.ru/page?utm_source=..."
+            />
+          </div>
+          {error && <p className="text-sm text-red-600">{error}</p>}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={closeEdit}>Отмена</Button>
+            <Button type="button" onClick={handleSave} disabled={saving || utmUrl.trim() === ''}>
+              {saving ? 'Сохранение...' : 'Сохранить'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   )
 }

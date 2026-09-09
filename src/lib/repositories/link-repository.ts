@@ -32,3 +32,20 @@ export async function getUserLinks(userId: string, limit: number = 50) {
     take: limit,
   })
 }
+
+export async function getLinkById(id: string) {
+  return prisma.link.findUnique({ where: { id } })
+}
+
+export interface UpdateLinkData {
+  originalUrl?: string
+  utmUrl?: string
+  utmSource?: string
+  utmMedium?: string | null
+  utmCampaign?: string | null
+  utmContent?: string | null
+}
+
+export async function updateLink(id: string, data: UpdateLinkData) {
+  return prisma.link.update({ where: { id }, data })
+}
