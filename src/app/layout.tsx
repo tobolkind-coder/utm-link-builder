@@ -2,6 +2,9 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "sonner";
+import { getSettings } from "@/lib/services/settings-service";
+
+export const dynamic = "force-dynamic";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -13,20 +16,32 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-export const metadata: Metadata = {
-  title: "UTM Link Builder",
-  description: "Внутренний корпоративный сервис для генерации UTM-ссылок",
-  robots: {
-    index: false,
-    follow: false,
-    nocache: true,
-    googleBot: {
+export async function generateMetadata(): Promise<Metadata> {
+  const defaultTitle = "UTM Link Builder";
+  const defaultDescription = "Внутренний корпоративный сервис для генерации UTM-ссылок";
+
+  let settings: { serviceName?: string } | null = null;
+  try {
+    settings = await getSettings();
+  } catch {
+    // fallback to defaultTitle
+  }
+
+  return {
+    title: settings?.serviceName || defaultTitle,
+    description: defaultDescription,
+    robots: {
       index: false,
       follow: false,
-      noimageindex: true,
+      nocache: true,
+      googleBot: {
+        index: false,
+        follow: false,
+        noimageindex: true,
+      },
     },
-  },
-};
+  };
+}
 
 
 export default function RootLayout({

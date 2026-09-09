@@ -16,12 +16,18 @@ export function Header({ user }: HeaderProps) {
   const router = useRouter()
   const pathname = usePathname()
   const isAdmin = pathname.startsWith('/admin')
+  const [serviceName, setServiceName] = useState('UTM Link Builder')
   const [instructionUrl, setInstructionUrl] = useState('')
 
   useEffect(() => {
     fetch('/api/settings')
       .then(r => r.json())
-      .then(d => { if (d.success && d.data.instructionUrl) setInstructionUrl(d.data.instructionUrl) })
+      .then(d => {
+        if (d.success) {
+          if (d.data.serviceName) setServiceName(d.data.serviceName)
+          if (d.data.instructionUrl) setInstructionUrl(d.data.instructionUrl)
+        }
+      })
       .catch(() => {})
   }, [])
 
@@ -39,7 +45,7 @@ export function Header({ user }: HeaderProps) {
     <header className="sticky top-0 z-50 border-b bg-white shadow-sm">
       <div className="container mx-auto px-4 py-4 flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Link href="/dashboard" className="text-xl font-bold hover:text-blue-600 transition-colors">UTM Link Builder</Link>
+          <Link href="/dashboard" className="text-xl font-bold hover:text-blue-600 transition-colors">{serviceName}</Link>
         </div>
         <div className="flex items-center gap-4">
           {isAdmin && (
