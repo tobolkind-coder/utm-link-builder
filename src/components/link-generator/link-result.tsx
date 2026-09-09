@@ -13,18 +13,19 @@ interface LinkResultProps {
 }
 
 export function LinkResult({ link }: LinkResultProps) {
-  const [copied, setCopied] = useState(false)
+  const [copiedUtm, setCopiedUtm] = useState(false)
+  const [copiedShort, setCopiedShort] = useState(false)
 
   if (!link) return null
 
-  const handleCopy = async () => {
+  const handleCopy = async (text: string, setCopied: (value: boolean) => void) => {
     try {
-      await navigator.clipboard.writeText(link.shortUrl)
+      await navigator.clipboard.writeText(text)
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     } catch {
       const textArea = document.createElement('textarea')
-      textArea.value = link.shortUrl
+      textArea.value = text
       document.body.appendChild(textArea)
       textArea.select()
       document.execCommand('copy')
@@ -37,22 +38,30 @@ export function LinkResult({ link }: LinkResultProps) {
   return (
     <Card className="mt-4">
       <CardContent className="pt-6">
-        <div className="space-y-2">
+        <div className="space-y-4">
           <div>
             <span className="text-sm font-medium">UTM-ссылка:</span>
             <p className="text-sm text-gray-600 break-all">{link.utmUrl}</p>
+            <div className="flex gap-2 mt-2">
+              <Button variant="outline" onClick={() => handleCopy(link.utmUrl, setCopiedUtm)}>
+                {copiedUtm ? 'Скопировано!' : 'Копировать'}
+              </Button>
+              <Button variant="outline" onClick={() => window.open(link.utmUrl, '_blank')}>
+                Открыть
+              </Button>
+            </div>
           </div>
           <div>
             <span className="text-sm font-medium">Короткая ссылка:</span>
             <p className="text-sm text-gray-600">{link.shortUrl}</p>
-          </div>
-          <div className="flex gap-2 mt-4">
-            <Button variant="outline" onClick={handleCopy}>
-              {copied ? 'Скопировано!' : 'Копировать'}
-            </Button>
-            <Button variant="outline" onClick={() => window.open(link.shortUrl, '_blank')}>
-              Открыть
-            </Button>
+            <div className="flex gap-2 mt-2">
+              <Button variant="outline" onClick={() => handleCopy(link.shortUrl, setCopiedShort)}>
+                {copiedShort ? 'Скопировано!' : 'Копировать'}
+              </Button>
+              <Button variant="outline" onClick={() => window.open(link.shortUrl, '_blank')}>
+                Открыть
+              </Button>
+            </div>
           </div>
         </div>
       </CardContent>
