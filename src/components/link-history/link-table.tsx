@@ -111,14 +111,14 @@ export function LinkTable({ links, onUpdated }: LinkTableProps) {
               {pageLinks.map((link) => (
                 <div key={link.id} className="grid grid-cols-[110px_1fr] gap-x-4 py-3 sm:grid-cols-[110px_minmax(0,1fr)]">
                   <span className="text-xs text-gray-500 whitespace-nowrap pt-1">{formatDate(link.createdAt)}</span>
-                  <div className="space-y-1 min-w-0">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="font-mono text-xs break-all min-w-0">{link.shortUrl}</span>
-                      <Button size="sm" className="shrink-0" onClick={() => handleCopy(link.shortUrl)}>Копировать</Button>
+                  <div className="space-y-1.5 min-w-0">
+                    <div className="grid grid-cols-[minmax(0,1fr)_96px] items-center gap-2">
+                      <span className="font-mono text-xs truncate min-w-0" title={link.shortUrl}>{link.shortUrl}</span>
+                      <Button size="sm" className="w-full" onClick={() => handleCopy(link.shortUrl)}>Копировать</Button>
                     </div>
-                    <div className="flex items-start gap-2 min-w-0">
-                      <p className="text-xs text-gray-500 break-all min-w-0">{link.utmUrl}</p>
-                      <Button size="sm" variant="outline" className="shrink-0" onClick={() => openEdit(link)}>Редактировать</Button>
+                    <div className="grid grid-cols-[minmax(0,1fr)_96px] items-center gap-2">
+                      <p className="text-xs text-gray-500 truncate min-w-0" title={link.utmUrl}>{link.utmUrl}</p>
+                      <Button size="sm" variant="outline" className="w-full" onClick={() => openEdit(link)}>Редактировать</Button>
                     </div>
                   </div>
                 </div>
