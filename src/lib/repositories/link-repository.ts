@@ -18,12 +18,19 @@ export async function createLink(data: CreateLinkData) {
 }
 
 export async function findLinkByShortCode(shortCode: string) {
-  return prisma.link.findUnique({ where: { shortCode } })
+  return prisma.link.findFirst({ where: { shortCode: { equals: shortCode, mode: 'insensitive' } } })
 }
 
 export async function isShortCodeUnique(shortCode: string): Promise<boolean> {
   const existing = await prisma.link.findUnique({ where: { shortCode } })
   return existing === null
+}
+
+export async function isShortCodeTaken(shortCode: string): Promise<boolean> {
+  const existing = await prisma.link.findFirst({
+    where: { shortCode: { equals: shortCode, mode: 'insensitive' } },
+  })
+  return existing !== null
 }
 
 export interface GetUserLinksPaginatedParams {

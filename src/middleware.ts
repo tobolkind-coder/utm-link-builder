@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
+import { RESERVED_SHORT_CODES } from '@/lib/short-code'
 
 /**
  * Middleware безопасности:
@@ -20,10 +21,16 @@ const STATIC_PATH_PREFIXES = [
 ]
 
 function isShortCodeCandidate(pathname: string): boolean {
-  // короткие ссылки — это одиночный сегмент вида /AbC123 длиной 6-8 символов
+  // Короткие ссылки — это одиночный сегмент вида /AbC123 (автогенерация 6-8)
+  // или кастомный адрес из 3-9 символов ([a-zA-Z0-9_-]).
+  // Диапазон 3-9 сознательно не пересекается с customLoginPath (мин. 10 символов),
+  // а зарезервированные слова исключаются отдельно (например /dashboard, 9 символов).
   const segments = pathname.split('/').filter(Boolean)
   if (segments.length !== 1) return false
-  return /^[a-zA-Z0-9]{6,8}$/.test(segments[0])
+  const segment = segments[0]
+  if (!/^[a-zA-Z0-9_-]{3,9}$/.test(segment)) return false
+  if (RESERVED_SHORT_CODES.includes(segment.toLowerCase())) return false
+  return true
 }
 
 export function middleware(request: NextRequest) {

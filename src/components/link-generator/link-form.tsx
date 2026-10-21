@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
 import { Select, SelectItem, SelectValue } from '@/components/ui/select'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { toast } from 'sonner'
@@ -28,6 +29,13 @@ export function LinkForm({ onSuccess }: LinkFormProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const dateInputRef = useRef<HTMLInputElement>(null)
+
+  const [useCustomCode, setUseCustomCode] = useState(false)
+  const [customShortCode, setCustomShortCode] = useState('')
+  const [codeCheckStatus, setCodeCheckStatus] = useState<'idle' | 'checking' | 'available' | 'unavailable'>('idle')
+  const [codeCheckReason, setCodeCheckReason] = useState('')
+  const [shortDomain, setShortDomain] = useState('')
+  const codeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const [sources, setSources] = useState<UtmItem[]>([])
   const [mediums, setMediums] = useState<UtmItem[]>([])
@@ -60,6 +68,49 @@ export function LinkForm({ onSuccess }: LinkFormProps) {
     fetchUtmData()
   }, [])
 
+  useEffect(() => {
+    const fetchShortDomain = async () => {
+      try {
+        const res = await fetch('/api/settings')
+        const data = await res.json()
+        if (data.success && data.data?.shortDomain) {
+          setShortDomain(data.data.shortDomain)
+        }
+      } catch {
+        // не критично — просто не показываем префикс домена
+      }
+    }
+    fetchShortDomain()
+  }, [])
+
+  useEffect(() => {
+    if (codeDebounceRef.current) {
+      clearTimeout(codeDebounceRef.current)
+    }
+    if (!useCustomCode || customShortCode.trim() === '') {
+      setCodeCheckStatus('idle')
+      setCodeCheckReason('')
+      return
+    }
+    setCodeCheckStatus('checking')
+    codeDebounceRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/links/check-code?code=${encodeURIComponent(customShortCode)}`)
+        const data = await res.json()
+        if (data.success && data.data?.available) {
+          setCodeCheckStatus('available')
+          setCodeCheckReason('')
+        } else {
+          setCodeCheckStatus('unavailable')
+          setCodeCheckReason(data.data?.reason || 'Адрес недоступен.')
+        }
+      } catch {
+        setCodeCheckStatus('unavailable')
+        setCodeCheckReason('Не удалось проверить адрес.')
+      }
+    }, 400)
+  }, [useCustomCode, customShortCode])
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
@@ -76,6 +127,7 @@ export function LinkForm({ onSuccess }: LinkFormProps) {
           campaignPart2: campaignPart2 || undefined,
           contentDate,
           contentText: contentText || undefined,
+          customShortCode: useCustomCode ? customShortCode : undefined,
         }),
       })
       const data = await response.json()
@@ -104,6 +156,10 @@ export function LinkForm({ onSuccess }: LinkFormProps) {
       setUrl('')
       setContentText('')
       setContentDate(new Date().toISOString().slice(0, 10))
+      setUseCustomCode(false)
+      setCustomShortCode('')
+      setCodeCheckStatus('idle')
+      setCodeCheckReason('')
     } catch {
       setError('Ошибка создания ссылки.')
     } finally {
@@ -111,7 +167,10 @@ export function LinkForm({ onSuccess }: LinkFormProps) {
     }
   }
 
-  const isValid = url.trim() !== '' && utmSource !== ''
+  const isValid =
+    url.trim() !== '' &&
+    utmSource !== '' &&
+    (!useCustomCode || codeCheckStatus === 'available')
 
   return (
     <Card>
@@ -194,6 +253,44 @@ export function LinkForm({ onSuccess }: LinkFormProps) {
             </div>
           </div>
           {error && <p className="text-sm text-red-600">{error}</p>}
+          <div className="border-t pt-4">
+            <div className="flex items-center justify-between">
+              <label htmlFor="customCodeSwitch" className="text-sm font-medium">
+                Задать свой адрес короткой ссылки
+              </label>
+              <Switch
+                id="customCodeSwitch"
+                checked={useCustomCode}
+                onCheckedChange={(checked) => {
+                  setUseCustomCode(checked)
+                  if (!checked) {
+                    setCustomShortCode('')
+                    setCodeCheckStatus('idle')
+                    setCodeCheckReason('')
+                  }
+                }}
+              />
+            </div>
+            {useCustomCode && (
+              <div className="mt-3 space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-500 whitespace-nowrap">{shortDomain}/</span>
+                  <Input
+                    type="text"
+                    value={customShortCode}
+                    onChange={(e) => setCustomShortCode(e.target.value.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 9))}
+                    placeholder="ivan_blogger"
+                  />
+                </div>
+                <p className="text-xs text-gray-500">
+                  Латиница, цифры, «-» и «_», 3-9 символов. Регистр не различается.
+                </p>
+                {codeCheckStatus === 'checking' && <p className="text-xs text-gray-400">Проверка...</p>}
+                {codeCheckStatus === 'available' && <p className="text-xs text-green-600">✓ Адрес свободен</p>}
+                {codeCheckStatus === 'unavailable' && <p className="text-xs text-red-600">{codeCheckReason}</p>}
+              </div>
+            )}
+          </div>
           <Button type="submit" className="w-full" disabled={!isValid || loading}>
             {loading ? 'Создание...' : 'Создать ссылку'}
           </Button>

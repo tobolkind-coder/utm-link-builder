@@ -1,5 +1,8 @@
-import { createLink, isShortCodeUnique, getUserLinksPaginated, getLinkById, updateLink } from '@/lib/repositories/link-repository'
+import { createLink, isShortCodeUnique, isShortCodeTaken, getUserLinksPaginated, getLinkById, updateLink } from '@/lib/repositories/link-repository'
 import { getSettings } from '@/lib/services/settings-service'
+import { getCurrentLoginPath } from '@/lib/services/settings-service'
+import { validateCustomShortCodeFormat, isReservedShortCode } from '@/lib/short-code'
+import { Prisma } from '@prisma/client'
 
 export interface CreateLinkRequest {
   url: string
@@ -9,6 +12,7 @@ export interface CreateLinkRequest {
   campaignPart2?: string
   contentDate?: string
   contentText?: string
+  customShortCode?: string
 }
 
 export interface CreateLinkResponse {
@@ -26,6 +30,49 @@ function generateShortCode(): string {
     result += chars.charAt(Math.floor(Math.random() * chars.length))
   }
   return result
+}
+
+async function resolveShortCode(customShortCode?: string): Promise<string> {
+  if (customShortCode && customShortCode.trim() !== '') {
+    const trimmed = customShortCode.trim()
+    if (!validateCustomShortCodeFormat(trimmed)) {
+      throw new Error('Адрес должен содержать 3-9 символов: латинские буквы, цифры, "-" и "_".')
+    }
+    const loginPath = await getCurrentLoginPath()
+    if (isReservedShortCode(trimmed, loginPath)) {
+      throw new Error(`Адрес "${trimmed}" зарезервирован системой и не может быть использован.`)
+    }
+    if (await isShortCodeTaken(trimmed)) {
+      throw new Error(`Адрес "${trimmed}" уже занят. Выберите другой.`)
+    }
+    return trimmed
+  }
+
+  let shortCode = generateShortCode()
+  let attempts = 0
+  while (!(await isShortCodeUnique(shortCode)) && attempts < 10) {
+    shortCode = generateShortCode()
+    attempts++
+  }
+  if (attempts >= 10) {
+    throw new Error('Не удалось сгенерировать уникальный код.')
+  }
+  return shortCode
+}
+
+export async function checkShortCodeAvailabilityService(code: string): Promise<{ available: boolean; reason?: string }> {
+  const trimmed = code.trim()
+  if (!validateCustomShortCodeFormat(trimmed)) {
+    return { available: false, reason: 'Недопустимый формат. 3-9 символов: латинские буквы, цифры, "-" и "_".' }
+  }
+  const loginPath = await getCurrentLoginPath()
+  if (isReservedShortCode(trimmed, loginPath)) {
+    return { available: false, reason: 'Этот адрес зарезервирован системой.' }
+  }
+  if (await isShortCodeTaken(trimmed)) {
+    return { available: false, reason: 'Адрес уже занят.' }
+  }
+  return { available: true }
 }
 
 function normalizeUrl(url: string): string {
@@ -94,15 +141,14 @@ export async function createLinkService(
 
   const utmUrl = cleanUrl.toString()
 
-  let shortCode = generateShortCode()
-  let attempts = 0
-  while (!(await isShortCodeUnique(shortCode)) && attempts < 10) {
-    shortCode = generateShortCode()
-    attempts++
-  }
-
-  if (attempts >= 10) {
-    throw new Error('Не удалось сгенерировать уникальный код.')
+  let shortCode: string
+  try {
+    shortCode = await resolveShortCode(request.customShortCode)
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+      throw new Error(`Адрес "${request.customShortCode?.trim()}" уже занят. Выберите другой.`)
+    }
+    throw e
   }
 
   const settings = await getSettings()
@@ -123,6 +169,11 @@ export async function createLinkService(
     utmMedium: request.utmMedium,
     utmCampaign: campaign,
     utmContent: content,
+  }).catch((e) => {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+      throw new Error(`Адрес "${shortCode}" уже занят. Выберите другой.`)
+    }
+    throw e
   })
 
   return {

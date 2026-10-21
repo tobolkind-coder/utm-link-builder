@@ -2,6 +2,7 @@ import { notFound, redirect } from 'next/navigation'
 import { getCurrentLoginPath } from '@/lib/services/settings-service'
 import { LoginForm } from '@/components/auth/login-form'
 import { findLinkByShortCode } from '@/lib/repositories/link-repository'
+import { ANY_SHORT_CODE_REGEX } from '@/lib/short-code'
 
 interface PageProps {
   params: Promise<{ slug: string[] }>
@@ -23,7 +24,7 @@ export default async function CatchAllPage({ params }: PageProps) {
     )
   }
 
-  if (slug.length === 1 && /^[a-zA-Z0-9]{6,8}$/.test(slug[0])) {
+  if (slug.length === 1 && ANY_SHORT_CODE_REGEX.test(slug[0])) {
     const link = await findLinkByShortCode(slug[0])
     if (link) {
       redirect(link.utmUrl)
