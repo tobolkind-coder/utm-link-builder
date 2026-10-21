@@ -1,4 +1,4 @@
-import { createLink, isShortCodeUnique, isShortCodeTaken, getUserLinksPaginated, getLinkById, updateLink } from '@/lib/repositories/link-repository'
+import { createLink, isShortCodeUnique, isShortCodeTaken, getUserLinksPaginated, getLinkById, updateLink, updateLinkFavorite } from '@/lib/repositories/link-repository'
 import { getSettings } from '@/lib/services/settings-service'
 import { getCurrentLoginPath } from '@/lib/services/settings-service'
 import { validateCustomShortCodeFormat, isReservedShortCode } from '@/lib/short-code'
@@ -13,12 +13,16 @@ export interface CreateLinkRequest {
   contentDate?: string
   contentText?: string
   customShortCode?: string
+  comment?: string
 }
 
 export interface CreateLinkResponse {
+  id: string
   originalUrl: string
   utmUrl: string
   shortUrl: string
+  comment?: string | null
+  isFavorite: boolean
   createdAt: Date
 }
 
@@ -169,6 +173,7 @@ export async function createLinkService(
     utmMedium: request.utmMedium,
     utmCampaign: campaign,
     utmContent: content,
+    comment: request.comment?.trim() || undefined,
   }).catch((e) => {
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
       throw new Error(`Адрес "${shortCode}" уже занят. Выберите другой.`)
@@ -177,9 +182,12 @@ export async function createLinkService(
   })
 
   return {
+    id: link.id,
     originalUrl: link.originalUrl,
     utmUrl: link.utmUrl,
     shortUrl: link.shortUrl,
+    comment: link.comment,
+    isFavorite: link.isFavorite,
     createdAt: link.createdAt,
   }
 }
@@ -190,6 +198,7 @@ export interface GetUserLinksParams {
   search?: string
   dateFrom?: string
   dateTo?: string
+  onlyFavorites?: boolean
 }
 
 const ALLOWED_PAGE_SIZES = [5, 10, 20, 50]
@@ -218,6 +227,7 @@ export async function getUserLinksService(userId: string, params: GetUserLinksPa
     search: params.search?.trim() || undefined,
     dateFrom,
     dateTo,
+    onlyFavorites: params.onlyFavorites,
   })
 
   return {
@@ -252,10 +262,28 @@ function parseUtmParams(urlString: string): {
   }
 }
 
+export async function toggleFavoriteLinkService(
+  id: string,
+  userId: string,
+  isFavorite: boolean
+) {
+  const link = await getLinkById(id)
+  if (!link) {
+    throw new Error('Ссылка не найдена.')
+  }
+  if (link.userId !== userId) {
+    throw new Error('Недостаточно прав для редактирования этой ссылки.')
+  }
+
+  await updateLinkFavorite(id, userId, isFavorite)
+  return { id, isFavorite }
+}
+
 export async function updateLinkUtmUrlService(
   id: string,
   userId: string,
-  newUtmUrl: string
+  newUtmUrl: string,
+  comment?: string | null
 ) {
   const link = await getLinkById(id)
   if (!link) {
@@ -293,20 +321,28 @@ export async function updateLinkUtmUrlService(
   if (utmParams.utmCampaign) finalUrl.searchParams.set('utm_campaign', utmParams.utmCampaign)
   if (utmParams.utmContent) finalUrl.searchParams.set('utm_content', utmParams.utmContent)
 
-  const updated = await updateLink(id, {
+  const updateData: Parameters<typeof updateLink>[1] = {
     originalUrl: utmUrl, // URL без utm-параметров
     utmUrl: finalUrl.toString(),
     utmSource: utmParams.utmSource,
     utmMedium: utmParams.utmMedium,
     utmCampaign: utmParams.utmCampaign,
     utmContent: utmParams.utmContent,
-  })
+  }
+
+  if (comment !== undefined) {
+    updateData.comment = comment?.trim() || null
+  }
+
+  const updated = await updateLink(id, updateData)
 
   return {
     id: updated.id,
     originalUrl: updated.originalUrl,
     utmUrl: updated.utmUrl,
     shortUrl: updated.shortUrl,
+    comment: updated.comment,
+    isFavorite: updated.isFavorite,
     createdAt: updated.createdAt,
   }
 }

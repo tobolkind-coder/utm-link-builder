@@ -21,6 +21,8 @@ interface Link {
   originalUrl: string
   shortUrl: string
   utmUrl: string
+  comment?: string | null
+  isFavorite?: boolean
   createdAt: string
 }
 

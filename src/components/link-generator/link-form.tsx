@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import { Select, SelectItem, SelectValue } from '@/components/ui/select'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -26,6 +27,7 @@ export function LinkForm({ onSuccess }: LinkFormProps) {
   const [campaignPart2, setCampaignPart2] = useState('')
   const [contentDate, setContentDate] = useState(new Date().toISOString().slice(0, 10))
   const [contentText, setContentText] = useState('')
+  const [comment, setComment] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const dateInputRef = useRef<HTMLInputElement>(null)
@@ -128,6 +130,7 @@ export function LinkForm({ onSuccess }: LinkFormProps) {
           contentDate,
           contentText: contentText || undefined,
           customShortCode: useCustomCode ? customShortCode : undefined,
+          comment: comment.trim() || undefined,
         }),
       })
       const data = await response.json()
@@ -156,6 +159,7 @@ export function LinkForm({ onSuccess }: LinkFormProps) {
       setUrl('')
       setContentText('')
       setContentDate(new Date().toISOString().slice(0, 10))
+      setComment('')
       setUseCustomCode(false)
       setCustomShortCode('')
       setCodeCheckStatus('idle')
@@ -251,6 +255,18 @@ export function LinkForm({ onSuccess }: LinkFormProps) {
               <label htmlFor="contentText" className="block text-sm font-medium mb-1">Текст UTM Content</label>
               <Input id="contentText" type="text" value={contentText} onChange={(e) => setContentText(e.target.value)} placeholder="Введите значение" />
             </div>
+          </div>
+          <div>
+            <label htmlFor="comment" className="block text-sm font-medium mb-1">Комментарий (описание)</label>
+            <Textarea
+              id="comment"
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              placeholder="Для чего создана ссылка, например: «QR-код на упаковке товара»"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              По комментарию можно будет найти ссылку в истории.
+            </p>
           </div>
           {error && <p className="text-sm text-red-600">{error}</p>}
           <div className="border-t pt-4">

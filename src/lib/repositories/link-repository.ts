@@ -11,6 +11,7 @@ export interface CreateLinkData {
   utmMedium?: string
   utmCampaign?: string
   utmContent?: string
+  comment?: string
 }
 
 export async function createLink(data: CreateLinkData) {
@@ -39,19 +40,25 @@ export interface GetUserLinksPaginatedParams {
   search?: string
   dateFrom?: Date
   dateTo?: Date
+  onlyFavorites?: boolean
 }
 
 export async function getUserLinksPaginated(
   userId: string,
-  { page, pageSize, search, dateFrom, dateTo }: GetUserLinksPaginatedParams
+  { page, pageSize, search, dateFrom, dateTo, onlyFavorites }: GetUserLinksPaginatedParams
 ) {
   const where: Prisma.LinkWhereInput = { userId }
+
+  if (onlyFavorites) {
+    where.isFavorite = true
+  }
 
   if (search) {
     where.OR = [
       { shortUrl: { contains: search, mode: 'insensitive' } },
       { utmUrl: { contains: search, mode: 'insensitive' } },
       { originalUrl: { contains: search, mode: 'insensitive' } },
+      { comment: { contains: search, mode: 'insensitive' } },
     ]
   }
 
@@ -87,8 +94,16 @@ export interface UpdateLinkData {
   utmMedium?: string | null
   utmCampaign?: string | null
   utmContent?: string | null
+  comment?: string | null
 }
 
 export async function updateLink(id: string, data: UpdateLinkData) {
   return prisma.link.update({ where: { id }, data })
+}
+
+export async function updateLinkFavorite(id: string, userId: string, isFavorite: boolean) {
+  return prisma.link.updateMany({
+    where: { id, userId },
+    data: { isFavorite },
+  })
 }

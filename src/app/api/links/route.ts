@@ -18,6 +18,7 @@ export async function GET(request: Request) {
     const search = searchParams.get('search') ?? undefined
     const dateFrom = searchParams.get('dateFrom') ?? undefined
     const dateTo = searchParams.get('dateTo') ?? undefined
+    const onlyFavorites = searchParams.get('onlyFavorites') === 'true'
 
     const result = await getUserLinksService(user.id, {
       page: pageParam ? Number(pageParam) : undefined,
@@ -25,6 +26,7 @@ export async function GET(request: Request) {
       search,
       dateFrom,
       dateTo,
+      onlyFavorites,
     })
 
     return NextResponse.json({

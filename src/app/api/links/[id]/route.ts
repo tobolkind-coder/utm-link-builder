@@ -17,7 +17,7 @@ export async function PUT(
 
     const { id } = await params
     const body = await request.json()
-    const link = await updateLinkUtmUrlService(id, user.id, body.utmUrl)
+    const link = await updateLinkUtmUrlService(id, user.id, body.utmUrl, body.comment)
     return NextResponse.json({ success: true, data: link })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Внутренняя ошибка сервера.'
