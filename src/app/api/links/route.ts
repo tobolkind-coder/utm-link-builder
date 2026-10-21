@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/auth'
 import { createLinkService, getUserLinksService } from '@/lib/services/link-service'
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const user = await getCurrentUser()
     if (!user) {
@@ -12,8 +12,31 @@ export async function GET() {
       )
     }
 
-    const links = await getUserLinksService(user.id)
-    return NextResponse.json({ success: true, data: links })
+    const { searchParams } = new URL(request.url)
+    const pageParam = searchParams.get('page')
+    const pageSizeParam = searchParams.get('pageSize')
+    const search = searchParams.get('search') ?? undefined
+    const dateFrom = searchParams.get('dateFrom') ?? undefined
+    const dateTo = searchParams.get('dateTo') ?? undefined
+
+    const result = await getUserLinksService(user.id, {
+      page: pageParam ? Number(pageParam) : undefined,
+      pageSize: pageSizeParam ? Number(pageSizeParam) : undefined,
+      search,
+      dateFrom,
+      dateTo,
+    })
+
+    return NextResponse.json({
+      success: true,
+      data: result.items,
+      meta: {
+        page: result.page,
+        pageSize: result.pageSize,
+        total: result.total,
+        totalPages: result.totalPages,
+      },
+    })
   } catch {
     return NextResponse.json(
       { success: false, message: 'Внутренняя ошибка сервера.' },

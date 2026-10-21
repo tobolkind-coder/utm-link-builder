@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -15,21 +15,92 @@ interface Link {
 }
 
 interface LinkTableProps {
-  links: Link[]
-  onUpdated: () => void
+  refreshSignal: number
 }
 
-const ITEMS_PER_PAGE = 10
+interface Meta {
+  page: number
+  pageSize: number
+  total: number
+  totalPages: number
+}
 
-export function LinkTable({ links, onUpdated }: LinkTableProps) {
+export function LinkTable({ refreshSignal }: LinkTableProps) {
+  const [links, setLinks] = useState<Link[]>([])
+  const [meta, setMeta] = useState<Meta>({ page: 1, pageSize: 10, total: 0, totalPages: 0 })
+  const [loading, setLoading] = useState(true)
+
   const [page, setPage] = useState(1)
+  const [search, setSearch] = useState('')
+  const [searchInput, setSearchInput] = useState('')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+
   const [editingLink, setEditingLink] = useState<Link | null>(null)
   const [utmUrl, setUtmUrl] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  const totalPages = Math.ceil(links.length / ITEMS_PER_PAGE)
-  const startIdx = (page - 1) * ITEMS_PER_PAGE
-  const pageLinks = links.slice(startIdx, startIdx + ITEMS_PER_PAGE)
+
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const fetchLinks = useCallback(async () => {
+    setLoading(true)
+    try {
+      const params = new URLSearchParams()
+      params.set('page', String(page))
+      params.set('pageSize', String(meta.pageSize))
+      if (search) params.set('search', search)
+      if (dateFrom) params.set('dateFrom', dateFrom)
+      if (dateTo) params.set('dateTo', dateTo)
+
+      const res = await fetch(`/api/links?${params.toString()}`)
+      const data = await res.json()
+      if (data.success) {
+        setLinks(data.data)
+        setMeta(data.meta)
+      } else {
+        toast.error(data.message || 'Ошибка загрузки истории.')
+      }
+    } catch {
+      toast.error('Ошибка загрузки истории.')
+    } finally {
+      setLoading(false)
+    }
+  }, [page, meta.pageSize, search, dateFrom, dateTo])
+
+  useEffect(() => {
+    fetchLinks()
+  }, [fetchLinks, refreshSignal])
+
+  // Debounce search input
+  useEffect(() => {
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current)
+    debounceTimerRef.current = setTimeout(() => {
+      setSearch(searchInput.trim())
+      setPage(1)
+    }, 400)
+    return () => {
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current)
+    }
+  }, [searchInput])
+
+  const handleDateFromChange = (value: string) => {
+    setDateFrom(value)
+    setPage(1)
+  }
+
+  const handleDateToChange = (value: string) => {
+    setDateTo(value)
+    setPage(1)
+  }
+
+  const resetFilters = () => {
+    setSearchInput('')
+    setSearch('')
+    setDateFrom('')
+    setDateTo('')
+    setPage(1)
+  }
 
   const handleCopy = async (url: string) => {
     try {
@@ -74,7 +145,7 @@ export function LinkTable({ links, onUpdated }: LinkTableProps) {
       }
       toast.success('Ссылка обновлена.')
       closeEdit()
-      onUpdated()
+      fetchLinks()
     } catch {
       setError('Ошибка сохранения.')
     } finally {
@@ -93,13 +164,38 @@ export function LinkTable({ links, onUpdated }: LinkTableProps) {
     })
   }
 
+  const startIdx = meta.total === 0 ? 0 : (meta.page - 1) * meta.pageSize + 1
+  const endIdx = Math.min(meta.page * meta.pageSize, meta.total)
+
   return (
     <Card className="mt-6 relative">
       <CardHeader>
-        <CardTitle>История ссылок (последние 50)</CardTitle>
+        <CardTitle>История ссылок</CardTitle>
       </CardHeader>
       <CardContent>
-        {links.length === 0 ? (
+        <div className="space-y-3 mb-4">
+          <Input
+            type="text"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder="Поиск по ссылке или короткой ссылке"
+          />
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="flex-1 min-w-[160px]">
+              <label className="block text-sm font-medium mb-1">Дата от</label>
+              <Input type="date" value={dateFrom} onChange={(e) => handleDateFromChange(e.target.value)} />
+            </div>
+            <div className="flex-1 min-w-[160px]">
+              <label className="block text-sm font-medium mb-1">Дата до</label>
+              <Input type="date" value={dateTo} onChange={(e) => handleDateToChange(e.target.value)} />
+            </div>
+            <Button variant="outline" onClick={resetFilters}>Сбросить фильтры</Button>
+          </div>
+        </div>
+
+        {loading ? (
+          <p className="text-gray-500 text-center py-4">Загрузка...</p>
+        ) : links.length === 0 ? (
           <p className="text-gray-500 text-center py-4">Вы еще не создали ни одной ссылки.</p>
         ) : (
           <>
@@ -108,7 +204,7 @@ export function LinkTable({ links, onUpdated }: LinkTableProps) {
                 <span>Дата</span>
                 <span>Ссылки</span>
               </div>
-              {pageLinks.map((link) => (
+              {links.map((link) => (
                 <div key={link.id} className="grid grid-cols-[110px_1fr] gap-x-4 py-3 sm:grid-cols-[110px_minmax(0,1fr)]">
                   <span className="text-xs text-gray-500 whitespace-nowrap pt-1">{formatDate(link.createdAt)}</span>
                   <div className="space-y-1.5 min-w-0">
@@ -124,16 +220,16 @@ export function LinkTable({ links, onUpdated }: LinkTableProps) {
                 </div>
               ))}
             </div>
-            {totalPages > 1 && (
+            {meta.totalPages > 1 && (
               <div className="flex items-center justify-between mt-4">
                 <span className="text-sm text-gray-500">
-                  {startIdx + 1}–{Math.min(startIdx + ITEMS_PER_PAGE, links.length)} из {links.length}
+                  {startIdx}–{endIdx} из {meta.total}
                 </span>
                 <div className="flex gap-2">
-                  <Button variant="outline" size="sm" disabled={page === 1} onClick={() => setPage(page - 1)}>
+                  <Button variant="outline" size="sm" disabled={meta.page === 1} onClick={() => setPage(meta.page - 1)}>
                     Назад
                   </Button>
-                  <Button variant="outline" size="sm" disabled={page === totalPages} onClick={() => setPage(page + 1)}>
+                  <Button variant="outline" size="sm" disabled={meta.page === meta.totalPages} onClick={() => setPage(meta.page + 1)}>
                     Далее
                   </Button>
                 </div>

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Header } from '@/components/layout/header'
 import { LinkForm } from '@/components/link-generator/link-form'
@@ -26,36 +26,21 @@ interface Link {
 
 export default function DashboardPage() {
   const [user, setUser] = useState<User | null>(null)
-  const [links, setLinks] = useState<Link[]>([])
   const [lastCreatedLink, setLastCreatedLink] = useState<Link | null>(null)
   const [loading, setLoading] = useState(true)
+  const [refreshSignal, setRefreshSignal] = useState(0)
   const router = useRouter()
-
-  const fetchLinks = useCallback(async () => {
-    try {
-      const linksRes = await fetch('/api/links')
-      const linksData = await linksRes.json()
-      if (linksData.success) {
-        setLinks(linksData.data)
-      }
-    } catch {
-      // ignore
-    }
-  }, [])
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [userRes] = await Promise.all([
-          fetch('/api/auth/me'),
-        ])
+        const userRes = await fetch('/api/auth/me')
         const userData = await userRes.json()
         if (!userData.success) {
           router.push('/')
           return
         }
         setUser(userData.data)
-        await fetchLinks()
       } catch {
         router.push('/')
       } finally {
@@ -63,11 +48,11 @@ export default function DashboardPage() {
       }
     }
     fetchData()
-  }, [router, fetchLinks])
+  }, [router])
 
   const handleLinkSuccess = (link: Link) => {
     setLastCreatedLink(link)
-    fetchLinks()
+    setRefreshSignal((prev) => prev + 1)
   }
 
   if (loading) {
@@ -90,7 +75,7 @@ export default function DashboardPage() {
       <main className="container mx-auto px-4 py-8 max-w-5xl">
         <LinkForm onSuccess={handleLinkSuccess} />
         <LinkResult link={lastCreatedLink} />
-        <LinkTable links={links} onUpdated={fetchLinks} />
+        <LinkTable refreshSignal={refreshSignal} />
       </main>
     </div>
   )

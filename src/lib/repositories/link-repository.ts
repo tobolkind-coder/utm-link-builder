@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma'
+import type { Prisma } from '@prisma/client'
 
 export interface CreateLinkData {
   userId: string
@@ -25,12 +26,47 @@ export async function isShortCodeUnique(shortCode: string): Promise<boolean> {
   return existing === null
 }
 
-export async function getUserLinks(userId: string, limit: number = 50) {
-  return prisma.link.findMany({
-    where: { userId },
-    orderBy: { createdAt: 'desc' },
-    take: limit,
-  })
+export interface GetUserLinksPaginatedParams {
+  page: number
+  pageSize: number
+  search?: string
+  dateFrom?: Date
+  dateTo?: Date
+}
+
+export async function getUserLinksPaginated(
+  userId: string,
+  { page, pageSize, search, dateFrom, dateTo }: GetUserLinksPaginatedParams
+) {
+  const where: Prisma.LinkWhereInput = { userId }
+
+  if (search) {
+    where.OR = [
+      { shortUrl: { contains: search, mode: 'insensitive' } },
+      { utmUrl: { contains: search, mode: 'insensitive' } },
+      { originalUrl: { contains: search, mode: 'insensitive' } },
+    ]
+  }
+
+  if (dateFrom || dateTo) {
+    where.createdAt = {}
+    if (dateFrom) where.createdAt.gte = dateFrom
+    if (dateTo) where.createdAt.lte = dateTo
+  }
+
+  const skip = (page - 1) * pageSize
+
+  const [items, total] = await Promise.all([
+    prisma.link.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take: pageSize,
+    }),
+    prisma.link.count({ where }),
+  ])
+
+  return { items, total }
 }
 
 export async function getLinkById(id: string) {

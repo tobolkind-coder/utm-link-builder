@@ -1,4 +1,4 @@
-import { createLink, isShortCodeUnique, getUserLinks, getLinkById, updateLink } from '@/lib/repositories/link-repository'
+import { createLink, isShortCodeUnique, getUserLinksPaginated, getLinkById, updateLink } from '@/lib/repositories/link-repository'
 import { getSettings } from '@/lib/services/settings-service'
 
 export interface CreateLinkRequest {
@@ -133,8 +133,49 @@ export async function createLinkService(
   }
 }
 
-export async function getUserLinksService(userId: string) {
-  return getUserLinks(userId, 50)
+export interface GetUserLinksParams {
+  page?: number
+  pageSize?: number
+  search?: string
+  dateFrom?: string
+  dateTo?: string
+}
+
+const ALLOWED_PAGE_SIZES = [5, 10, 20, 50]
+
+export async function getUserLinksService(userId: string, params: GetUserLinksParams = {}) {
+  const page = Math.max(1, params.page ?? 1)
+  const pageSize = ALLOWED_PAGE_SIZES.includes(params.pageSize ?? 10)
+    ? (params.pageSize ?? 10)
+    : 10
+
+  let dateFrom: Date | undefined
+  let dateTo: Date | undefined
+
+  if (params.dateFrom) {
+    const parsed = new Date(params.dateFrom + 'T00:00:00.000Z')
+    if (!isNaN(parsed.getTime())) dateFrom = parsed
+  }
+  if (params.dateTo) {
+    const parsed = new Date(params.dateTo + 'T23:59:59.999Z')
+    if (!isNaN(parsed.getTime())) dateTo = parsed
+  }
+
+  const { items, total } = await getUserLinksPaginated(userId, {
+    page,
+    pageSize,
+    search: params.search?.trim() || undefined,
+    dateFrom,
+    dateTo,
+  })
+
+  return {
+    items,
+    page,
+    pageSize,
+    total,
+    totalPages: Math.ceil(total / pageSize),
+  }
 }
 
 function parseUtmParams(urlString: string): {
